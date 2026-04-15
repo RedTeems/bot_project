@@ -1,11 +1,39 @@
+from tabnanny import check
+
 import telebot
 from config import TOKEN
 from utils import user
 from telebot import types
+import json
+import  os
 
 bot = telebot.TeleBot(TOKEN)
-
+file_name  = 'users.json'
 user_profile = user.copy()
+
+def add_user(new_user):
+    if os.path.exists(file_name):
+        with open(file_name, mode='r', encoding='utf-8') as f:
+            users = json.load(f)
+    else:
+        users = []
+
+    exists = any(user['id'] == new_user['id'] for user in users)
+    if not exists:
+        users.append(new_user)
+        with open(file_name, mode='w', encoding='utf-8') as f:
+            json.dump(users, f, ensure_ascii=False, indent=4)
+
+
+def check_user_availability(user_id):
+    if os.path.exists(file_name):
+        with open(file_name, mode='r', encoding='utf-8') as f:
+            users = json.load(f)
+    else:
+        users = []
+    exists = any(user['id'] == user_id for user in users)
+    return exists
+
 
 def start_keyboard():
     keyboard = types.InlineKeyboardMarkup(row_width=1)
@@ -17,6 +45,7 @@ def start_keyboard():
 
 @bot.message_handler(commands=['start'])
 def start(message : types.Message):
+    user_profile['id'] = message.from_user.id
     bot.send_message(chat_id=message.chat.id, text='Добро пожаловать',reply_markup=start_keyboard())
 
 
@@ -72,6 +101,7 @@ def get_address_flat(message : types.Message):
     flat = message.text
     user_profile['address']['flat'] = flat
     bot.send_message(message.chat.id, f"Ваши данные успешно сохранены!")
+    add_user(user_profile)
     print(user_profile)
 
 @bot.callback_query_handler(func=lambda callback : callback.data.startswith('start_'))
@@ -79,6 +109,9 @@ def start_callback_handler(callback : types.CallbackQuery):
     bot.answer_callback_query(callback.id)
     data = callback.data.replace('start_', '')
     if data == 'connect':
+        if check_user_availability(callback.message.from_user.id):
+            bot.send_message(chat_id=callback.message.chat.id, text='Вы уже зарегистрированы')
+            return
         bot.send_message(chat_id=callback.message.chat.id, text='Введите имя: ')
         bot.register_next_step_handler(callback.message, get_name)
     elif data == 'application':
