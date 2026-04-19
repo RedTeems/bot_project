@@ -1,15 +1,13 @@
 [
     {
         "id": 5432296582,
-        "first_name": "Андрей",
-        "second_name": "Гусев",
-        "age": "15",
-        "email": "abc@mail.com",
+        "first_name": "Andrey",
+        "phone": "+79292834746",
         "address": {
-            "city": "Новомосковск",
-            "street": "пушкина",
-            "house": "колотушкина",
-            "flat": "8"
+            "city": "asdfasdf",
+            "street": "rfarfr",
+            "house": "5t",
+            "flat": "6"
         }
     }
 ]
