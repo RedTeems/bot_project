@@ -1,13 +1,33 @@
+from os.path import exists
+
 import telebot
 from config import TOKEN
-from utils import user
+from utils import user, service_type
 from telebot import types
 import json
 import os
 
 bot = telebot.TeleBot(TOKEN)
 file_name = 'users.json'
+services_file = 'services.json'
 user_profile = user.copy()
+is_service_type = False
+
+
+def add_service(user_id, service):
+    if os.path.exists(services_file):
+        with open(services_file, mode='r', encoding='utf-8') as f:
+            existing_service = json.load(f)
+    else:
+        existing_service = {}
+
+    exists = any(existing_service[user_id] == service for user_id in existing_service)
+    if not exists:
+        existing_service[user_id] = service
+        with open(services_file, mode='w', encoding='utf-8') as f:
+            json.dump(existing_service, f, ensure_ascii=False, indent=4)
+
+
 
 
 def add_user(new_user):
@@ -44,13 +64,26 @@ def start_keyboard():
 
 def keyboard_service_func():
     keyboard_service = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True, row_width=1)
-    btn_internet = types.KeyboardButton(text='Интернет')
-    btn_television = types.KeyboardButton(text='Телевидение')
-    btn_telephony = types.KeyboardButton(text='Телефония')
-    btn_intercom = types.KeyboardButton(text='Домофония')
-    btn_video_surveillance = types.KeyboardButton(text='Видеонаблюдение')
+    btn_internet = types.KeyboardButton(text=service_type[0])
+    btn_television = types.KeyboardButton(text=service_type[1])
+    btn_telephony = types.KeyboardButton(text=service_type[2])
+    btn_intercom = types.KeyboardButton(text=service_type[3])
+    btn_video_surveillance = types.KeyboardButton(text=service_type[4])
     keyboard_service.add(btn_internet, btn_television, btn_telephony, btn_intercom, btn_video_surveillance)
     return keyboard_service
+
+
+def keyboard_auth_user_actions():
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    btn_new_connection = types.InlineKeyboardButton(text='Новое подключение', callback_data='auth_new_connection')
+    btn_selected_connection = types.InlineKeyboardButton(text='Ваши услуги', callback_data='auth_selected_connection')
+    btn_support = types.InlineKeyboardButton(text='Техподдержка', url='https://t.me/Redflaut')
+    btn_disabling = types.InlineKeyboardButton(text='Отключение услуги', callback_data='auth_disabling')
+    btn_payment = types.InlineKeyboardButton(text='Оплата услуг', callback_data='auth_payment')
+    keyboard.add(btn_new_connection, btn_selected_connection)
+    keyboard.add(btn_support)
+    keyboard.add(btn_disabling, btn_payment)
+    return keyboard
 
 
 @bot.message_handler(commands=['start'])
@@ -133,9 +166,9 @@ def get_address_flat(message: types.Message):
     if flat.isdigit():
         user_profile['address']['flat'] = flat
         bot.send_message(message.chat.id, f"Ваши данные успешно сохранены!")
-        bot.send_message(message.chat.id, text=f'В скором времени наш оператор позвонит вам.')
+        bot.send_message(message.chat.id, text='Выберите действие:', reply_markup=keyboard_auth_user_actions())
         add_user(user_profile)
-        print(user_profile)
+
     else:
         bot.send_message(chat_id=message.chat.id, text='Введите правильно свою квартиру')
         bot.register_next_step_handler(message, get_address_flat)
@@ -145,19 +178,45 @@ def get_address_flat(message: types.Message):
 def start_callback_handler(callback: types.CallbackQuery):
     bot.answer_callback_query(callback.id)
     data = callback.data.replace('start_', '')
-    print(data)
-    print(callback.message.from_user.id)
+
     if data == 'connect':
         if check_user_availability(user_profile['id']):
             bot.send_message(chat_id=callback.message.chat.id, text='Вы уже зарегистрированы')
-            print(111)
 
             return
+        bot.send_message(chat_id=callback.message.chat.id, text='Введите ваше имя')
+        bot.register_next_step_handler(callback.message, get_name)
+
+    elif data == 'application':
+        bot.send_message(callback.message.chat.id, text='Выберите действие:', reply_markup=keyboard_auth_user_actions())
+
+
+@bot.callback_query_handler(func=lambda callback: callback.data.startswith('auth_'))
+def auth_callback_handler(callback: types.CallbackQuery):
+    global is_service_type
+    bot.answer_callback_query(callback.id)
+    data = callback.data.replace('auth_', '')
+    if data == 'new_connection':
         bot.send_message(chat_id=callback.message.chat.id, text='Выберите услугу:',
                          reply_markup=keyboard_service_func())
-        bot.register_next_step_handler(callback.message, choice_service)
-    elif data == 'application':
+        is_service_type = True
+
+    elif data == 'selected_connection':
         ...
+    elif data == 'disabling':
+        ...
+    elif data == 'payment':
+        ...
+
+@bot.message_handler(func=lambda message: message.text in service_type and is_service_type)
+def service_type_handler(message: types.Message):
+    global is_service_type
+    service = message.text
+    user_id = user_profile['id']
+    add_service(user_id, service)
+    is_service_type = False
+    bot.send_message(chat_id=message.chat.id, text='Услуга добавлена')
+
 
 
 bot.polling()
