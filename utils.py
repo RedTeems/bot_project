@@ -1,8 +1,7 @@
 user = {
+    'id' : None,
     'first_name' : None,
-    'second_name' : None,
-    'age' : None,
-    'email' : None,
+    'phone' : None,
     'address' : {
         'city' : None,
         'street' : None,
@@ -11,3 +10,9 @@ user = {
     }
 
 }
+
+services = {
+
+}
+
+service_type = ('Интернет', 'Телевидение', 'Телефония', 'Домофония', 'Видеонаблюдение')
