@@ -1,6 +1,6 @@
-from os.path import exists
-
 import telebot
+
+
 from config import TOKEN
 from utils import user, service_type
 from telebot import types
@@ -20,12 +20,24 @@ def add_service(user_id, service):
             existing_service = json.load(f)
     else:
         existing_service = {}
-
-    exists = any(existing_service[user_id] == service for user_id in existing_service)
+    exists = False
+    for user_id in existing_service:
+        if service in existing_service[user_id]:
+            exists = True
+            break
+    #exists = any(service in existing_service[user_id] for user_id in existing_service)
     if not exists:
-        existing_service[user_id] = service
+
+        if existing_service and type(existing_service[str(user_id)]) == list:
+            existing_service[str(user_id)].append(service)
+        else:
+            existing_service[user_id] = [service]
+
         with open(services_file, mode='w', encoding='utf-8') as f:
             json.dump(existing_service, f, ensure_ascii=False, indent=4)
+            return True
+    else:
+        return False
 
 
 
@@ -43,6 +55,20 @@ def add_user(new_user):
         with open(file_name, mode='w', encoding='utf-8') as f:
             json.dump(users, f, ensure_ascii=False, indent=4)
 
+def get_selected_service(user_id):
+    if os.path.exists(services_file):
+        with open(services_file, mode='r', encoding='utf-8') as f:
+            existing_service = json.load(f)
+    else:
+        existing_service = {}
+    if existing_service and existing_service[user_id] :
+        res = (f'Ваши услуги: \n'
+               f'{'\n'.join(existing_service[user_id])}')
+        return res
+    else:
+        return 'У вас нет действующих услуг'
+
+
 
 def check_user_availability(user_id):
     if os.path.exists(file_name):
@@ -54,11 +80,14 @@ def check_user_availability(user_id):
     return exists
 
 
-def start_keyboard():
+def start_keyboard(register_user: str):
     keyboard = types.InlineKeyboardMarkup(row_width=1)
     btn_connect = types.InlineKeyboardButton(text='Стать абонентом', callback_data='start_connect')
     btn_application = types.InlineKeyboardButton(text='Я существующий абонент', callback_data='start_application')
-    keyboard.add(btn_connect, btn_application)
+    if register_user == 'register':
+        keyboard.add(btn_application)
+    else:
+        keyboard.add(btn_connect)
     return keyboard
 
 
@@ -85,12 +114,44 @@ def keyboard_auth_user_actions():
     keyboard.add(btn_disabling, btn_payment)
     return keyboard
 
+def keyboard_disabling(user_id):
+    if os.path.exists(services_file):
+        with open(services_file, mode='r', encoding='utf-8') as f:
+            existing_service = json.load(f)
+    else:
+        existing_service = {}
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+
+    for i, btn in enumerate(existing_service[(str(user_id))]):
+        callback_data = f'disabling_{i}_{btn}'
+        button = types.InlineKeyboardButton(text=btn, callback_data=callback_data)
+        keyboard.add(button)
+    return keyboard
+
 
 @bot.message_handler(commands=['start'])
 def start(message: types.Message):
-    user_profile['id'] = message.from_user.id
-    print(message.from_user.id)
-    bot.send_message(chat_id=message.chat.id, text='Вас приветствует компания Росинтел!', reply_markup=start_keyboard())
+    if os.path.exists(file_name):
+        with open(file_name, mode='r', encoding='utf-8') as f:
+            users = json.load(f)
+    else:
+        users = []
+    if users:
+        user_profile['id'] = str(message.from_user.id)
+        print(user_profile['id'])
+        is_register_user = False
+        for user in users:
+            print(user)
+            if user_profile['id'] == user['id']:
+                is_register_user = True
+                break
+
+        if is_register_user:
+            bot.send_message(chat_id=message.chat.id, text='Вас приветствует компания Росинтел!',
+                             reply_markup=start_keyboard('register'))
+        else:
+            bot.send_message(chat_id=message.chat.id, text='Вас приветствует компания Росинтел!',
+                             reply_markup=start_keyboard('not_register'))
 
 
 def choice_service(message):
@@ -202,21 +263,55 @@ def auth_callback_handler(callback: types.CallbackQuery):
         is_service_type = True
 
     elif data == 'selected_connection':
-        ...
+
+        user_id = user_profile['id']
+        selected_service = get_selected_service(user_id)
+        bot.send_message(chat_id=callback.message.chat.id, text=selected_service)
+
+
+
     elif data == 'disabling':
-        ...
+        bot.send_message(chat_id=callback.message.chat.id, text='Выберете услугу, которую хотите отключить:', reply_markup=keyboard_disabling(user_profile['id']))
     elif data == 'payment':
         ...
+
+
+@bot.callback_query_handler(func= lambda callback: callback.data.startswith('disabling_'))
+def disabling_handler(callback: types.CallbackQuery):
+    bot.answer_callback_query(callback.id)
+    _, idx, name = callback.data.split('_')
+
+
+    if os.path.exists(services_file):
+        with open(services_file, mode='r', encoding='utf-8') as f:
+            existing_service = json.load(f)
+    else:
+        existing_service = {}
+    if existing_service:
+        for user_id in existing_service:
+            if user_id == str(user_profile['id']):
+                existing_service[user_id].remove(name)
+                with open(services_file, mode='w', encoding='utf-8') as f:
+                    json.dump(existing_service, f, ensure_ascii=False, indent=4)
+                bot.send_message(chat_id=callback.message.chat.id, text='Услуга отключена')
+
+
+
+
+
 
 @bot.message_handler(func=lambda message: message.text in service_type and is_service_type)
 def service_type_handler(message: types.Message):
     global is_service_type
     service = message.text
     user_id = user_profile['id']
-    add_service(user_id, service)
+    is_success = add_service(user_id, service)
     is_service_type = False
-    bot.send_message(chat_id=message.chat.id, text='Услуга добавлена')
+    if is_success:
+        bot.send_message(chat_id=message.chat.id, text='Услуга добавлена')
 
+    else:
+        bot.send_message(chat_id=message.chat.id, text='Услуга уже добавлена')
 
 
 bot.polling()
